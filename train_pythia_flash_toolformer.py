@@ -9,14 +9,14 @@ from transformers.trainer_utils import get_last_checkpoint
 from itertools import chain
 from typing import Optional
 from dataclasses import dataclass, field
-from transformers import (
-    AutoTokenizer,
+from transformers import AutoTokenizer
+from transformers.trainer import (
     HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-    default_data_collator,
-    set_seed,
+    Trainer
 )
+from transformers.training_args import TrainingArguments
+from transformers.data.data_collator import default_data_collator
+from transformers.trainer_utils import set_seed
 
 from flash_attention.flash_attention_gptj_wrapper import FlashAttentionWrapper
 

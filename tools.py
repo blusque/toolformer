@@ -16,10 +16,13 @@ from transformers import (
 from typing import List
 from operator import truediv, mul, add, sub
 from langchain.chains import LLMChain
-from langchain import Cohere, PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_qwq.chat_models import ChatQwen
 
 # Optional imports
 from googleapiclient.discovery import build
+
+import os
 
 
 """
@@ -74,7 +77,7 @@ class Retriever:
             inputs["input_ids"] = inputs["input_ids"].cuda()
             inputs["token_type_ids"] = inputs["token_type_ids"].cuda()
             inputs["attention_mask"] = inputs["attention_mask"].cuda()
-            with torch.no_grad():
+            with torch.no_grad():  
                 outputs = self.model(**inputs)
                 embeddings = mean_pooling(outputs[0], inputs["attention_mask"])
             output_list.append(embeddings)
@@ -184,15 +187,71 @@ output - A float, the result of the calculation
 Adapted from: https://levelup.gitconnected.com/3-ways-to-write-a-calculator-in-python-61642f2e4a9a 
 """
 
-
-def Calculator(input_query: str):
+class Calculator:
     operators = {"+": add, "-": sub, "*": mul, "/": truediv}
-    if input_query.isdigit():
-        return float(input_query)
-    for c in operators.keys():
-        left, operator, right = input_query.partition(c)
-        if operator in operators:
-            return round(operators[operator](Calculator(left), Calculator(right)), 2)
+
+    def __call__(self, input_query: str):
+        """
+        Solves a mathematical expression.
+        
+        input_query: A string representing the mathematical expression (e.g. "400/1400")
+        
+        Returns: The result of the calculation as a float, rounded to 2 decimal places.
+        """
+        return Calculator.solve(input_query, fmt="infix")
+
+    @staticmethod
+    def solve(input_query: str, fmt: str = "infix"):
+        if fmt == "rpn":
+            return Calculator._solve_rpn(input_query)
+        elif fmt == "infix":
+            return Calculator._solve_infix(input_query)
+        else:
+            raise ValueError(f"Unknown format: {fmt}. Supported formats are 'rpn' and 'infix'.")
+
+    @staticmethod
+    def _solve_rpn(input_query: str):
+        """
+        Solves a mathematical expression in Reverse Polish Notation (RPN).
+        
+        input_query: A string representing the RPN expression (e.g. "3 4 + 2 *")
+
+        Returns: The result of the calculation as a float, rounded to 2 decimal places.
+        """
+        stack = []
+        tokens = input_query.split()
+        for token in tokens:
+            if token.isdigit():
+                stack.append(float(token))
+            elif token in Calculator.operators:
+                right = stack.pop()
+                left = stack.pop()
+                result = Calculator.operators[token](left, right)
+                stack.append(result)
+            else:
+                continue  # Ignore invalid tokens
+        return round(stack[0], 2)
+
+    @staticmethod
+    def _solve_infix(input_query: str):
+        input_query = input_query.strip()
+        if input_query.isdigit():
+            return float(input_query)
+        for c in Calculator.operators.keys():
+            left, operator, right = input_query.partition(c)
+            if operator in Calculator.operators:
+                return round(Calculator.operators[operator](Calculator._solve_infix(left), Calculator._solve_infix(right)), 2)
+            else:
+                continue
+
+# def Calculator(input_query: str):
+#     operators = {"+": add, "-": sub, "*": mul, "/": truediv}
+#     if input_query.isdigit():
+#         return float(input_query)
+#     for c in operators.keys():
+#         left, operator, right = input_query.partition(c)
+#         if operator in operators:
+#             return round(operators[operator](Calculator(left), Calculator(right)), 2)
 
 
 # Other Optional Tools
@@ -208,14 +267,28 @@ Requires that you set your COHERE_API_KEY environment variable before starting.
 """
 def langchain_llmchain(input_question):
     # TODO: Check succinct if it's good once we don't have rate limited APIs
-    template = """Please be succinct in your answer to this question.
-Question: {question}
+    template = [
+        (
+            "system",
+            "Please be succinct in your answer to this question. You should think step by step.\n"
+            "The questions are in format of : 'Question: <question>'\n\n"
+        ),
+        ("human", "Question: {question}\n\n")
+    ]
+#     template = """Please be succinct in your answer to this question.
+# Question: {question}
 
-Answer: Let's think step by step."""
-    prompt = PromptTemplate(template=template, input_variables=["question"])
-    llm = Cohere(model="command-xlarge-nightly")
-    chain = LLMChain(llm=llm, prompt=prompt)
-    return chain.predict(question=input_question)
+# Answer: Let's think step by step."""
+    prompt = ChatPromptTemplate(template)
+    llm = ChatQwen(
+        model="qwen-plus",
+        max_tokens=1024,
+        timeout=60,
+        temperature=0.7,
+        max_retries=3,
+    )
+    chain = prompt | llm
+    return chain.invoke({"question": input_question}).content
 
 
 """
@@ -323,7 +396,7 @@ output - A list of strings, the generated text
 
 
 def SteamSHP(input_query: str):
-    device = "cuda"  # if you have a GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained("stanfordnlp/SteamSHP-flan-t5-large")
     model = T5ForConditionalGeneration.from_pretrained(
         "stanfordnlp/SteamSHP-flan-t5-large"
@@ -349,15 +422,23 @@ openai.api_key - your GooseAI API key
 """
 
 
-def GooseAI(input_query: str):
-    openai.api_key = "YOUR_API_KEY"
-    openai.api_base = "https://api.goose.ai/v1"
+def GooseAI(input_query: str) -> str:
+    client = openai.Client(
+        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
     # Create a completion, return results streaming as they are generated.
     # Run with `python3 -u` to ensure unbuffered output.
-    completion = openai.Completion.create(
-        engine="gpt-neo-20b", prompt=input_query, max_tokens=160
+    completion = client.chat.completions.create(
+        model="qwen-plus",
+        messages=[
+            {
+                "role": "user",
+                "content": input_query,
+            }
+        ]
     )
-    return completion.choices[0].text
+    return completion.choices[0].message.content or ""
 
 
 """
@@ -407,32 +488,48 @@ def bing_search(input_query: str):
 
 
 if __name__ == "__main__":
-    print(langchain_llmchain("Please respond"))
+    import argparse
 
-    print(
-        WikiSearch("What is a dog?")
-    )  # Outputs a list of strings, each string is a Wikipedia document
-
-    print(Calendar())  # Outputs a string, the current date
-
-    print(Calculator("400/1400"))  # For Optional Basic Calculator
-
-    print(MT("Un chien c'est quoi?"))  # What is a dog?
-
-    # Optional Tools
-
-    print(
-        HuggingfaceAPI("What is a dog?")
-    )  # Outputs a string, the answer to the input query
-
-    print(SteamSHP("What is a dog?"))  # Outputs a list with an answer
-
-    print(WolframAlphaCalculator("What is 2 + 2?"))  # 4
-
-    print(GooseAI("What is a dog?"))  # Outputs a string, the answer to the input query
-
-    print(google_search("What is a dog?"))
-    # Outputs a list of dictionaries, each dictionary is a Google Search result
-
-    print(bing_search("What is a dog?"))
-    # Outputs a list of dictionaries, each dictionary is a Bing Search result
+    parser = argparse.ArgumentParser(description="Run various tools.")
+    parser.add_argument("--module", type=str, required=True, help="Module to run")
+    args = parser.parse_args()
+    if args.module == "retriever":
+        retriever = Retriever()
+        sentences = [
+            "The dog's name is Max.",
+            "Max is a golden retriever.",
+            "Golden retrievers are friendly and loyal.",
+        ]
+        input_text = "The dog's name is"
+        k = 2
+        print(retriever.retrieval(sentences, input_text, k))
+    elif args.module == "wikipedia_search":
+        wiki_search = WikiSearch("What is a dog?")
+        print(wiki_search)
+    elif args.module == "mt":
+        mt = MT("Un chien c'est quoi?")
+        print(mt)
+    elif args.module == "calculator":
+        calculator = Calculator()
+        result = calculator("400/1400")
+        print(result)
+    elif args.module == "langchain_llmchain":
+        langchain_llmchain = LangChainLLMChain("Please respond")
+        print(langchain_llmchain)
+    elif args.module == "huggingface_api":
+        huggingface_api = HuggingfaceAPI("What is a dog?")
+        print(huggingface_api)
+    elif args.module == "wolfram_alpha_calculator":
+        wolfram_alpha_calculator = WolframAlphaCalculator("What is 2 + 2?")
+        print(wolfram_alpha_calculator)
+    elif args.module == "goose_ai":
+        goose_ai = GooseAI("What is a dog?")
+        print(goose_ai)
+    elif args.module == "bing_search":
+        bing_search_results = bing_search("What is a dog?")
+        print(bing_search_results)
+    elif args.module == "google_search":
+        google_search_results = google_search("What is a dog?")
+        print(google_search_results)
+    else:
+        print(f"Module {args.module} not recognized.")
