@@ -211,6 +211,8 @@ if __name__ == "__main__":
         heads=8,
         ff_mult=4,
     )
+    param_amount = sum(p.numel() for p in toolformer.parameters())
+    print(f"Total parameters: {param_amount / 1e6:.2f}M")
     tokens = torch.randint(0, 20000, (1, 512))
     logits = toolformer(tokens)
     print(logits.shape)
