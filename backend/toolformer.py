@@ -5,9 +5,9 @@ import os
 from typing import Never
 
 from openai import OpenAI
-from .toolformer_prompt import toolformer_answer_prompt, toolformer_generation_prompt, toolformer_error_prompt, toolformer_summary_prompt
+from toolformer_prompt import toolformer_answer_prompt, toolformer_generation_prompt, toolformer_error_prompt, toolformer_summary_prompt
 
-from .tools import Calendar, Calculator
+from tools import Calendar, Calculator
 
 tools_map = {
     "Calendar": Calendar,
@@ -66,10 +66,12 @@ def setup_openai_client(api_key: str) -> OpenAI:
     )
     return client
 
-def chat_completion(client: OpenAI, messages: list, max_tokens: int, temperature: float, top_p: float, top_k: float) -> tuple[str, list] | Never:
+async def chat_completion(client: OpenAI | None, messages: list, max_tokens: int, temperature: float, top_p: float, top_k: float) -> tuple[str, list] | Never:
     """
     Send a chat completion request to the OpenAI API.
     """
+    if client is None:
+        raise RuntimeError("OpenAI client is not initialized. Please call setup_openai_client first.")
     finished = False
     output = ''
     previous_output = None
@@ -77,6 +79,7 @@ def chat_completion(client: OpenAI, messages: list, max_tokens: int, temperature
     same_count = 0
     used_tools = set()
     while not finished:
+        # print("Current messages:", f"\n{messages}")
         response = client.chat.completions.create(
             model="qwen-plus",
             messages=messages,
@@ -88,11 +91,13 @@ def chat_completion(client: OpenAI, messages: list, max_tokens: int, temperature
                 "stop": ["]"],
             }
         )
+        output = response.choices[0].message.content.strip()
+        print(f"Raw Output: {output}")
         # print(messages)
         # Replace tool calls in the response
-        if response.choices[0].message.content:
+        if output:
             try:
-                output, finished = invoke_tool(response.choices[0].message.content)
+                output, finished = invoke_tool(output, used_tools)
             except ValueError as e:
                 print(f"Error processing tool calls: {e}")
                 messages.append({"role": "assistant", "content": output})
@@ -119,12 +124,21 @@ def chat_completion(client: OpenAI, messages: list, max_tokens: int, temperature
 
     # Send the final response
     messages.append(fit_prompt(toolformer_summary_prompt))
+    print("Finalizing response with summary prompt.")
+    # print(f"Final messages: {messages}")
     response = client.chat.completions.create(
         model="qwen-plus",
         messages=messages,
         max_tokens=max_tokens,
-        temperature=temperature
+        temperature=temperature,
+        top_p=top_p,
+        extra_body={
+            "top_k": top_k,
+            "stop": ["<eos>"],
+        }
     )
+    print("Final response received.")
+    print(f"Final response content: {response.choices[0].message.content}")
     
     if response.choices[0].message.content is not None:
         return response.choices[0].message.content, list(used_tools)  # Return the final summarized response

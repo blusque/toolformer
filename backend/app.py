@@ -4,6 +4,7 @@ import token
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+from pyparsing import C
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,11 +12,15 @@ import os
 from openai import OpenAI
 from fastapi.responses import StreamingResponse
 import json
-from backend.toolformer import chat_completion
+from toolformer import chat_completion
 from toolformer_prompt import toolformer_answer_prompt, toolformer_generation_prompt, toolformer_error_prompt, toolformer_summary_prompt
 
+dashscope_api_key = os.getenv("DASHSCOPE_API_KEY", "sk-ba7b3e19b37d49ca9bea6ec40bb8077a")
 
 app = FastAPI(title="Toolformer Chat API", version="1.0.0")
+
+class ClearMessagesResponse(BaseModel):
+    should_clear: bool
 
 class ChatMessage(BaseModel):
     role: str
@@ -33,19 +38,47 @@ class ChatResponse(BaseModel):
     tools_used: Optional[List[str]] = []
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="../template"), name="static")
+app.mount("/static", StaticFiles(directory="../frontend/static"), name="static")
 
 @app.get("/")
 async def serve_home():
-    return FileResponse("../template/index.html")
+    return FileResponse("../frontend/template/index.html")
+
+# Initialize OpenAI client
+client = None
+should_clear_messages = True
+
+def initialize_client():
+    global client
+    if client is None:
+        try:
+            client = OpenAI(
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_key=dashscope_api_key
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
+        
+@app.get("/clear_messages", response_model=ClearMessagesResponse)
+async def clear_messages():
+    """
+    Endpoint to clear messages in the chat.
+    Returns a response indicating whether the messages should be cleared.
+    """
+    response = ClearMessagesResponse(should_clear=should_clear_messages)
+    return response
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
+        if client is None:
+            initialize_client()
+
         messages = [{"role": "system", "content": toolformer_answer_prompt}]
         messages.extend([{"role": msg.role, "content": msg.content} for msg in request.messages])
 
-        result, used_tools = chat_completion(
+        result, used_tools = await chat_completion(
+            client=client,
             messages=messages,
             max_tokens=request.max_tokens, # type: ignore
             temperature=request.temperature, # type: ignore

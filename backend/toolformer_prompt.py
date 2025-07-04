@@ -8,6 +8,10 @@ Question: "I have an appointment on Christmas day this year, can you tell me how
 Answer: "The Christmas is on December 25, and today is [Calendar()->"
 Question: "Can you calculate 1+1?"
 Answer: "The answer of 1+1 is [Calculator(1+1)->"
+Question: "Can you solve a math problem for me?"
+Answer: "Sure, I can help you with that. Please provide the math problem you want me to solve.<eos>"
+Question: "Can you chat with me?"
+Answer: "Of course! I'm here to chat with you. What would you like to talk about?<eos>"
 """
 
 toolformer_error_prompt = """You are a helpful assistant that can use tools to answer questions. You have been given a question and you have partially answered the question. But the previous call has an error {error}, you should figure out the error and complete the answer again. You can use the tools to help you understand the question or give more precise answers, and you should only use the tools that are necessary to answer the question. You can give an answer directly if you think there's no need to use a tool. When you think the answer is finished, use '<eos>' to stop the answer. You should not use any tools that are not provided in the prompt. The tools and their calling method are given in the format of "tool_name | calling_approach | tool_description" as follows:
