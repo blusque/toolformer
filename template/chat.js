@@ -75,7 +75,7 @@ class ToolformerChat {
 
         try {
             // Send message to backend
-            const response = await this.sendMessageToAPI(message);
+            const response = await this.sendMessagesToAPI();
             
             // Add assistant response to conversation
             this.addMessage('assistant', response.message, response.tools_used);
@@ -88,13 +88,12 @@ class ToolformerChat {
         }
     }
 
-    async sendMessageToAPI(message) {
+    async sendMessagesToAPI() {
         const requestBody = {
             messages: [
-                ...this.messages,
-                { role: 'user', content: message }
+                ...this.messages
             ],
-            max_tokens: 150,
+            max_tokens: 1024,
             temperature: 0.7
         };
 
