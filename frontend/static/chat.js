@@ -97,19 +97,61 @@ class ToolformerChat {
         this.chatInput.style.height = 'auto';
         this.setLoading(true);
 
-        // Add empty assistant message for streaming
-        this.addMessage('assistant', '');
-        this.currentStreamingMessageIndex = this.messages.length - 1;
-
         try {
-            // Start streaming response
-            await this.streamMessagesFromAPI();
+            // Send messages to API
+            const response = await this.sendMessagesToAPI();
+            if (response.error) {
+                throw new Error(response.error);
+            }
+
+            // Update last assistant message with response content
+            this.updateMessage('assistant', response.message, response.tools_used || []);
         } catch (error) {
             console.error('Error sending message:', error);
             this.updateMessage('assistant', 'Sorry, I encountered an error. Please try again.', [], true);
         } finally {
             this.setLoading(false);
         }
+    }
+
+    async checkForClearMessages() {
+        const response = await fetch('/clear_messages', {
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.should_clear;
+    }
+
+    async sendMessagesToAPI() {
+        const requestBody = {
+            messages: [
+                ...this.messages
+            ],
+            max_tokens: 1024,
+            temperature: 0.7,
+            top_p: 1.0,
+            top_k: 50
+        };
+
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
     }
 
     async streamMessagesFromAPI() {

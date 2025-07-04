@@ -255,13 +255,31 @@ Adapted from: https://levelup.gitconnected.com/3-ways-to-write-a-calculator-in-p
 #                 continue
 
 def Calculator(input_query: str):
-    operators = {"+": add, "-": sub, "*": mul, "/": truediv}
-    if input_query.isdigit():
-        return float(input_query)
-    for c in operators.keys():
-        left, operator, right = input_query.partition(c)
-        if operator in operators:
-            return round(operators[operator](Calculator(left), Calculator(right)), 2)
+    """
+    A simple calculator that can evaluate basic arithmetic expressions.
+        
+    input_query: A string representing the mathematical expression (e.g. "400/1400")
+        
+    Returns: The result of the calculation as a float, rounded to 2 decimal places.
+    """
+    try:
+        # Remove any whitespace
+        input_query = input_query.strip()
+        
+        # Use eval() safely for basic arithmetic operations
+        # First, validate that the input only contains allowed characters
+        allowed_chars = set('0123456789+-*/.() ')
+        if not all(c in allowed_chars for c in input_query):
+            raise ValueError("Invalid characters in expression")
+        
+        # Evaluate the expression
+        result = eval(input_query)
+        
+        # Return the result rounded to 2 decimal places
+        return round(float(result), 2)
+        
+    except (ValueError, ZeroDivisionError, SyntaxError) as e:
+        return f"Error: {str(e)}"
 
 
 # Other Optional Tools
