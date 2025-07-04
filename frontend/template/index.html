@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toolformer Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="logo">Toolformer Assistant</div>
+        <button class="new-chat-btn">+ New Chat</button>
+    </header>
+
+    <main class="main-container">
+        <div class="welcome-section">
+            <h1 class="welcome-title">How can I help you today?</h1>
+            <p class="welcome-subtitle">I'm an AI assistant ready to help with questions, writing, analysis, and more.</p>
+        </div>
+
+        <div class="examples-grid">
+            <div class="example-card">
+                <div class="example-title">🗓️ Calendar</div>
+                <div class="example-text">Can you tell me how many days are left until Christmas?</div>
+            </div>
+            <div class="example-card">
+                <div class="example-title">🧮 Calculator</div>
+                <div class="example-text">Can you solve 2*8+3?</div>
+            </div>
+            <div class="example-card">
+                <div class="example-title">🔍 Analysis</div>
+                <div class="example-text">Analyze this data and provide insights and recommendations</div>
+            </div>
+            <div class="example-card">
+                <div class="example-title">🎓 Learning</div>
+                <div class="example-text">Explain complex concepts in simple terms with examples</div>
+            </div>
+        </div>
+
+        <div class="input-section">
+            <div class="input-container">
+                <textarea 
+                    class="chat-input" 
+                    placeholder="Message To Toolformer Assistant..."
+                    rows="1"
+                ></textarea>
+                <button class="send-btn" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="disclaimer">
+                AI can make mistakes. Consider checking important information.
+            </div>
+        </div>
+    </main>
+    <script src="/static/chat.js"></script>
+</body>
+</html>

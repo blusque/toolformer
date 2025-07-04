@@ -2,8 +2,10 @@ class ToolformerChat {
     constructor() {
         this.messages = [];
         this.isLoading = false;
+        this.currentStreamingMessageIndex = -1;
         this.initializeElements();
         this.bindEvents();
+        this.addStreamingStyles();
     }
 
     initializeElements() {
@@ -14,6 +16,22 @@ class ToolformerChat {
         this.newChatBtn = document.querySelector('.new-chat-btn');
         this.welcomeSection = document.querySelector('.welcome-section');
         this.examplesGrid = document.querySelector('.examples-grid');
+    }
+
+    addStreamingStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            .streaming-cursor {
+                animation: blink 1s infinite;
+                color: #10a37f;
+                font-weight: bold;
+            }
+            @keyframes blink {
+                0%, 50% { opacity: 1; }
+                51%, 100% { opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     bindEvents() {
@@ -31,8 +49,14 @@ class ToolformerChat {
         });
     }
 
+    updateMessage(role, content, tools = [], isError = false) {
+        // Simple method for error handling - adds a new message
+        this.addMessage(role, content, tools, isError);
+    }
+
     handleInputChange(e) {
         const value = e.target.value.trim();
+        console.log('Input changed:', value);
         this.sendBtn.disabled = value === '' || this.isLoading;
         
         // Auto-resize textarea
@@ -73,31 +97,31 @@ class ToolformerChat {
         this.chatInput.style.height = 'auto';
         this.setLoading(true);
 
+        // Add empty assistant message for streaming
+        this.addMessage('assistant', '');
+        this.currentStreamingMessageIndex = this.messages.length - 1;
+
         try {
-            // Send message to backend
-            const response = await this.sendMessagesToAPI();
-            
-            // Add assistant response to conversation
-            this.addMessage('assistant', response.message, response.tools_used);
-            
+            // Start streaming response
+            await this.streamMessagesFromAPI();
         } catch (error) {
             console.error('Error sending message:', error);
-            this.addMessage('assistant', 'Sorry, I encountered an error. Please try again.', [], true);
+            this.updateMessage('assistant', 'Sorry, I encountered an error. Please try again.', [], true);
         } finally {
             this.setLoading(false);
         }
     }
 
-    async sendMessagesToAPI() {
+    async streamMessagesFromAPI() {
         const requestBody = {
             messages: [
-                ...this.messages
+                ...this.messages.slice(0, -1) // Exclude the empty assistant message we just added
             ],
             max_tokens: 1024,
             temperature: 0.7
         };
 
-        const response = await fetch('/chat', {
+        const response = await fetch('/chat/stream', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -109,7 +133,111 @@ class ToolformerChat {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        return await response.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6); // Remove 'data: ' prefix
+                        if (dataStr.trim() === '') continue;
+
+                        try {
+                            const data = JSON.parse(dataStr);
+                            
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            if (data.type === 'chunk' && data.content) {
+                                accumulatedContent += data.content;
+                                this.updateStreamingMessage(accumulatedContent);
+                            } else if (data.type === 'done') {
+                                // Final update with tools used
+                                this.finalizeStreamingMessage(accumulatedContent, data.tools_used || []);
+                                return;
+                            }
+                        } catch (parseError) {
+                            console.warn('Failed to parse streaming data:', parseError);
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    updateStreamingMessage(content) {
+        // Update the content of the last assistant message
+        if (this.currentStreamingMessageIndex >= 0) {
+            this.messages[this.currentStreamingMessageIndex].content = content;
+            
+            // Update the message element in the UI
+            const messageElements = this.chatMessagesContainer.querySelectorAll('.assistant-message');
+            const lastMessageElement = messageElements[messageElements.length - 1];
+            
+            if (lastMessageElement) {
+                const contentDiv = lastMessageElement.querySelector('div');
+                if (contentDiv) {
+                    contentDiv.textContent = content;
+                    // Add cursor effect to show streaming
+                    contentDiv.style.position = 'relative';
+                    contentDiv.innerHTML = content + '<span class="streaming-cursor">|</span>';
+                }
+            }
+            
+            this.scrollToBottom();
+        }
+    }
+
+    finalizeStreamingMessage(content, tools = []) {
+        // Final update without cursor
+        if (this.currentStreamingMessageIndex >= 0) {
+            this.messages[this.currentStreamingMessageIndex].content = content;
+            
+            // Update the message element in the UI
+            const messageElements = this.chatMessagesContainer.querySelectorAll('.assistant-message');
+            const lastMessageElement = messageElements[messageElements.length - 1];
+            
+            if (lastMessageElement) {
+                // Remove the old content and recreate with tools if needed
+                lastMessageElement.innerHTML = '';
+                
+                // Create content container
+                const contentDiv = document.createElement('div');
+                contentDiv.style.cssText = 'white-space: pre-wrap; line-height: 1.5;';
+                contentDiv.textContent = content;
+                lastMessageElement.appendChild(contentDiv);
+
+                // Add tools used indicator if available
+                if (tools && tools.length > 0) {
+                    const toolsDiv = document.createElement('div');
+                    toolsDiv.style.cssText = `
+                        margin-top: 0.5rem;
+                        padding-top: 0.5rem;
+                        border-top: 1px solid #565869;
+                        font-size: 0.75rem;
+                        color: #9ca3af;
+                    `;
+                    toolsDiv.innerHTML = `<strong>Tools used:</strong> ${tools.join(', ')}`;
+                    lastMessageElement.appendChild(toolsDiv);
+                }
+            }
+            
+            this.scrollToBottom();
+        }
+        
+        // Reset streaming state
+        this.currentStreamingMessageIndex = -1;
     }
 
     addMessage(role, content, tools = [], isError = false) {
@@ -242,8 +370,9 @@ class ToolformerChat {
     }
 
     handleNewChat() {
-        // Reset messages
+        // Reset messages and streaming state
         this.messages = [];
+        this.currentStreamingMessageIndex = -1;
         
         // Remove chat interface if it exists
         if (this.chatContainer) {
@@ -266,5 +395,5 @@ class ToolformerChat {
 
 // Initialize the chat when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new ToolformerChat();
+new ToolformerChat();
 });
